@@ -28,7 +28,7 @@ const (
 )
 
 const (
-	KeyNode = "kubernetes.io/hostname"
+  KeyNode = "edu.stanford.slac.sdf.storage/ddn-sdf"
 
 	NodeDefaultNonListedNodes = "DEFAULT_PATH_FOR_NON_LISTED_NODES"
 
@@ -196,8 +196,8 @@ func (p *LocalPathProvisioner) Provision(opts pvController.ProvisionOptions) (*v
 		return nil, fmt.Errorf("claim.Spec.Selector is not supported")
 	}
 	for _, accessMode := range pvc.Spec.AccessModes {
-		if accessMode != v1.ReadWriteOnce {
-			return nil, fmt.Errorf("Only support ReadWriteOnce access mode")
+		if accessMode != v1.ReadWriteMany {
+			return nil, fmt.Errorf("Only support ReadWriteMany access mode")
 		}
 	}
 	node := opts.SelectedNode
@@ -211,9 +211,11 @@ func (p *LocalPathProvisioner) Provision(opts pvController.ProvisionOptions) (*v
 	}
 
 	name := opts.PVName
-	folderName := strings.Join([]string{name, opts.PVC.Namespace, opts.PVC.Name}, "_")
+	//folderName := strings.Join([]string{name, opts.PVC.Namespace, opts.PVC.Name}, "_")
 
-	path := filepath.Join(basePath, folderName)
+  // lets just use the parent basePath
+	// path := filepath.Join(basePath, folderName)
+	path := basePath
 	logrus.Infof("Creating volume %v at %v:%v", name, node.Name, path)
 
 	storage := pvc.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
@@ -229,12 +231,15 @@ func (p *LocalPathProvisioner) Provision(opts pvController.ProvisionOptions) (*v
 	}
 
 	fs := v1.PersistentVolumeFilesystem
-	hostPathType := v1.HostPathDirectoryOrCreate
+	// hostPathType := v1.HostPathDirectoryOrCreate
+  // use a hostpath only so we don't break anything
+	hostPathType := v1.HostPathDirectory
 
-	valueNode, ok := node.GetLabels()[KeyNode]
-	if !ok {
-		valueNode = node.Name
-	}
+	// valueNode, ok := node.GetLabels()[KeyNode]
+	// if !ok {
+	//	valueNode = node.Name
+	// }
+  value := "true"
 
 	return &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
@@ -262,7 +267,7 @@ func (p *LocalPathProvisioner) Provision(opts pvController.ProvisionOptions) (*v
 									Key:      KeyNode,
 									Operator: v1.NodeSelectorOpIn,
 									Values: []string{
-										valueNode,
+										value,
 									},
 								},
 							},
@@ -284,18 +289,18 @@ func (p *LocalPathProvisioner) Delete(pv *v1.PersistentVolume) (err error) {
 	}
 	if pv.Spec.PersistentVolumeReclaimPolicy != v1.PersistentVolumeReclaimRetain {
 		logrus.Infof("Deleting volume %v at %v:%v", pv.Name, node, path)
-		storage := pv.Spec.Capacity[v1.ResourceName(v1.ResourceStorage)]
-		cleanupCmd := []string{"/bin/sh", "/script/teardown"}
-		if err := p.createHelperPod(ActionTypeDelete, cleanupCmd, volumeOptions{
-			Name:        pv.Name,
-			Path:        path,
-			Mode:        *pv.Spec.VolumeMode,
-			SizeInBytes: storage.Value(),
-			Node:        node,
-		}); err != nil {
-			logrus.Infof("clean up volume %v failed: %v", pv.Name, err)
-			return err
-		}
+// 		storage := pv.Spec.Capacity[v1.ResourceName(v1.ResourceStorage)]
+// 		cleanupCmd := []string{"/bin/sh", "/script/teardown"}
+// 		if err := p.createHelperPod(ActionTypeDelete, cleanupCmd, volumeOptions{
+// 			Name:        pv.Name,
+// 			Path:        path,
+// 			Mode:        *pv.Spec.VolumeMode,
+// 			SizeInBytes: storage.Value(),
+// 			Node:        node,
+// 		}); err != nil {
+// 			logrus.Infof("clean up volume %v failed: %v", pv.Name, err)
+// 			return err
+// 		}
 		return nil
 	}
 	logrus.Infof("Retained volume %v", pv.Name)
