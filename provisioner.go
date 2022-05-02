@@ -196,8 +196,8 @@ func (p *LocalPathProvisioner) Provision(opts pvController.ProvisionOptions) (*v
 		return nil, fmt.Errorf("claim.Spec.Selector is not supported")
 	}
 	for _, accessMode := range pvc.Spec.AccessModes {
-		if accessMode != v1.ReadWriteMany {
-			return nil, fmt.Errorf("Only support ReadWriteMany access mode")
+		if ( accessMode != v1.ReadWriteMany && accessMode != v1.ReadOnlyMany ) {
+			return nil, fmt.Errorf("Only support ReadWriteMany or ReadOnlyMany access mode")
 		}
 	}
 	node := opts.SelectedNode
