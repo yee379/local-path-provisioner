@@ -87,6 +87,7 @@ type ConfigData struct {
 	SharedFileSystemPath string             `json:"sharedFileSystemPath,omitempty"`
 	SetupCommand         string             `json:"setupCommand,omitempty"`
 	TeardownCommand      string             `json:"teardownCommand,omitempty"`
+	NoPvcDirectory       bool               `json:"noPvcDirectory,omitempty"`
 }
 
 type NodePathMap struct {
@@ -99,6 +100,7 @@ type Config struct {
 	SharedFileSystemPath string
 	SetupCommand         string
 	TeardownCommand      string
+	NoPvcDirectory       bool
 }
 
 func NewProvisioner(ctx context.Context, kubeClient *clientset.Clientset,
@@ -246,6 +248,21 @@ func (p *LocalPathProvisioner) isSharedFilesystem() (bool, error) {
 	return false, fmt.Errorf("both nodePathMap and sharedFileSystemPath are unconfigured")
 }
 
+func (p *LocalPathProvisioner) isNoPvcDirectory() (bool, error) {
+	p.configMutex.RLock()
+        defer p.configMutex.RUnlock()
+
+        if p.config == nil {
+                return false, fmt.Errorf("no valid config available")
+        }
+
+        c := p.config
+	if (c.NoPvcDirectory == true) {
+		return true, nil
+	}
+	return false, nil 
+}
+
 func (p *LocalPathProvisioner) Provision(ctx context.Context, opts pvController.ProvisionOptions) (*v1.PersistentVolume, pvController.ProvisioningState, error) {
 	pvc := opts.PVC
 	node := opts.SelectedNode
@@ -267,6 +284,10 @@ func (p *LocalPathProvisioner) Provision(ctx context.Context, opts pvController.
 			return nil, pvController.ProvisioningFinished, fmt.Errorf("configuration error, no node was specified")
 		}
 	}
+	noPvcDirectory, err := p.isNoPvcDirectory()
+	if err != nil {
+		return nil, pvController.ProvisioningFinished, err
+	}
 
 	nodeName := ""
 	if node != nil {
@@ -285,9 +306,12 @@ func (p *LocalPathProvisioner) Provision(ctx context.Context, opts pvController.
 	}
 
 	name := opts.PVName
-	folderName := strings.Join([]string{name, opts.PVC.Namespace, opts.PVC.Name}, "_")
 
-	path := filepath.Join(basePath, folderName)
+	path := basePath
+	if !noPvcDirectory {
+		folderName := strings.Join([]string{name, opts.PVC.Namespace, opts.PVC.Name}, "_")
+		path = filepath.Join(basePath, folderName)
+	}
 	if nodeName == "" {
 		logrus.Infof("Creating volume %v at %v", name, path)
 	} else {
@@ -675,6 +699,7 @@ func canonicalizeConfig(data *ConfigData) (cfg *Config, err error) {
 	cfg.SetupCommand = data.SetupCommand
 	cfg.TeardownCommand = data.TeardownCommand
 	cfg.NodePathMap = map[string]*NodePathMap{}
+	cfg.NoPvcDirectory = data.NoPvcDirectory
 	for _, n := range data.NodePathMap {
 		if cfg.NodePathMap[n.Node] != nil {
 			return nil, fmt.Errorf("duplicate node %v", n.Node)
